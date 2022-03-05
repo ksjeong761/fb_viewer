@@ -213,7 +213,7 @@ int main(void)
     clock_t timeEnd;   // timeEnd-timeStart로 시간을 측정한다.
 
     int checkRead;     // read() 호출 시 에러가 발생하는 지 확인하기 위한 변수
-    int checkFirstRun; // 이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
+    bool isImageLoaded;                         //이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
 
     int i, j; // 반복문 제어 변수
 
@@ -292,30 +292,7 @@ int main(void)
     clearFrameBuffer(pfbmap, fbvar);
 
     // 비트맵 확장자를 가진 파일 목록 수집
-    if ((dp = opendir(".")) == NULL)
-    {
-        perror("DIRECTORY OPEN");
-        exit(1);
-    }
-
-    while ((dent = readdir(dp)))
-    {
-        if (!strcmp(dent->d_name, ".") || !strcmp(dent->d_name, ".."))
-            continue;
-
-        ext = strrchr(dent->d_name, '.');
-        if (ext == NULL)
-        {
-        }
-        else
-        {
-            if (!strcmp(ext + 1, "bmp"))
-            {
-                fileList[fileIndex++] = dent->d_name;
-                printf("index%d : %s\n", fileIndex - 1, fileList[fileIndex - 1]);
-            }
-        }
-    }
+    searchFilesInPathByExtention(fileList, ".", "bmp");
 
     //-------------------BUTTON FUNCTION---------------------------
     pushSwitchBufferSize = sizeof(pushSwitchBuffer);
@@ -336,14 +313,14 @@ int main(void)
         // 장치가 없으면 콘솔에서 숫자로 입력 받는다.
         scanf("%d", &pushSwitchValue);
 
+        timeStart = clock();
+        
         switch (pushSwitchValue)
         {
             case 1: // OPEN NEXT FILE
-                printf("case 1:\n");
-                checkFirstRun++;
+                printf("case 1 : OPEN NEXT FILE\n");
                 printf("index:%d, %s\n", fileIndex, textLcdString); // FOR DEBUG
-                timeStart = clock();
-
+                
                 // 다음 파일이 있는지 체크
                 if ((++fileIndex) > 9)
                     fileIndex = 9;
@@ -391,6 +368,8 @@ int main(void)
                     }
                 }
 
+                isImageLoaded = true;
+
                 // Text LCD를 통해 헤더 정보(파일명, 해상도, BPP) 출력
                 lseek(fdTextLcd, 0, SEEK_SET);
                 for (i = 0; i < 16; i++)
@@ -424,13 +403,10 @@ int main(void)
                 break;
 
             case 2: // OPEN PREVIOUS FILE
-                printf("case 2:\n");
-                checkFirstRun++;
+                printf("case 2 : OPEN PREVIOUS FILE\n");
                 printf("index:%d, %s\n", fileIndex, textLcdString); // FOR DEBUG
-                timeStart = clock();
                 
-                
-                // 다음 파일이 있는지 체크
+                // 이전 파일이 있는지 체크
                 if ((--fileIndex) < 0)
                     fileIndex = 0;
 
@@ -440,7 +416,7 @@ int main(void)
                     break;
                 }
                 
-                // 다음 파일이 있다면 이미지 읽어오기
+                // 이전 파일이 있다면 이미지 읽어오기
                 memset(pfbmap, 0, fbvar.xres * fbvar.yres * 32 / 8);
                 fdBitmapInput = open(fileList[fileIndex], O_RDWR);
                 if (fdBitmapInput < 0)
@@ -477,6 +453,8 @@ int main(void)
                     }
                 }
 
+                isImageLoaded = true;
+
                 // Text LCD를 통해 헤더 정보(파일명, 해상도, BPP) 출력
                 lseek(fdTextLcd, 0, SEEK_SET);
                 for (i = 0; i < 16; i++)
@@ -505,7 +483,6 @@ int main(void)
                 
                 // 프레임 버퍼에 이미지 출력
                 drawImageOnFrameBuffer(pfbmap, fbvar, bitmapHeader, bitmapPixel, brightness);
-                
                 break;
 
             case 3: // CLEAR FRAME BUFFER
@@ -513,50 +490,44 @@ int main(void)
                 memset(pfbmap, 0, fbvar.xres * fbvar.yres * 32 / 8);
                 break;
 
-            case 4: // INCREASE BRIGHTNESS
-                printf("case 4:\n");
-                if (checkFirstRun == 0)
+            case 4:
+                printf("case 4 : INCREASE BRIGHTNESS\n");
+                
+                if (!isImageLoaded)
                 {
-                    printf("IMAGE IS NOT OPENED, PUSH SWITCH 1 OR 2\n");
+                    printf("IMAGE IS NOT LOADED\n");
                     break;
                 }
 
-                brightness += 30;
-                if (brightness > 256)
-                    brightness = 256;
-
-                // 프레임 버퍼에 이미지 출력
-                for (i = 0; i < MIN(bitmapHeader->biHeight, fbvar.yres); i++)
-                {
-                    for (j = 0; j < MIN(bitmapHeader->biWidth, fbvar.xres); j++)
-                    {
-                        *(pfbmap + i * fbvar.xres + j) = changePixelBrightness(bitmapPixel[i][j], brightness);
-                    }
-                }
-                break;
-
-            case 5: // DECREASE BRIGHTNESS
-                printf("case 5:\n");
-                if (checkFirstRun == 0)
-                {
-                    printf("IMAGE IS NOT OPENED, PUSH SWITCH 1 OR 2\n");
-                    break;
-                }
-                brightness -= 30;
-                if (brightness < -256)
-                    brightness = -256;
+                // 밝기 증가
+                brightness = thresholding(brightness + 30, -255, 255);
 
                 // 프레임 버퍼에 이미지 출력
                 drawImageOnFrameBuffer(pfbmap, fbvar, bitmapHeader, bitmapPixel, brightness);
-                
                 break;
 
-            case 6: // CAPTURE FRAME BUFFER
-                printf("case 6:\n");
-                timeStart = clock();
-                if (checkFirstRun == 0)
+            case 5:
+                printf("case 5: DECREASE BRIGHTNESS\n");
+
+                if (!isImageLoaded)
                 {
-                    printf("IMAGE IS NOT OPENED, PUSH SWITCH 1 OR 2\n");
+                    printf("IMAGE IS NOT LOADED\n");
+                    break;
+                }
+
+                // 밝기 감소
+                brightness = thresholding(brightness - 30, -255, 255);
+                
+                // 프레임 버퍼에 이미지 출력
+                drawImageOnFrameBuffer(pfbmap, fbvar, bitmapHeader, bitmapPixel, brightness);
+                break;
+
+            case 6:
+                printf("case 6 : CAPTURE FRAME BUFFER\n");
+                
+                if (!isImageLoaded)
+                {
+                    printf("IMAGE IS NOT LOADED\n");
                     break;
                 }
 
@@ -594,42 +565,25 @@ int main(void)
                     }
                 }
 
-                //새 파일이 추가되었으므로 파일 목록을 다시 불러온다.
-                fileTempIndex = fileIndex;
-                fileIndex = 0;
-                rewinddir(dp);
-                while ((dent = readdir(dp)))
-                {
-                    if (!strcmp(dent->d_name, ".") || !strcmp(dent->d_name, ".."))
-                        continue;
-
-                    ext = strrchr(dent->d_name, '.');
-                    if (ext == NULL)
-                    {
-                    }
-                    else
-                    {
-                        if (!strcmp(ext + 1, "bmp"))
-                        {
-                            fileList[fileIndex++] = dent->d_name;
-                            printf("index%d : %s\n", fileIndex - 1, fileList[fileIndex - 1]);
-                        }
-                    }
-                }
-                fileIndex = fileTempIndex;
-                timeEnd = clock();
-                printf("TIME : %f\n", ((double)(timeEnd - timeStart) / 1000000));
+                // 새 파일이 추가되었으므로 파일 목록을 다시 불러온다.
+                searchFilesInPathByExtention(fileList, ".", "bmp");
                 break;
 
             default:
                 break;
         }
 
+        timeEnd = clock();
+
+        if (pushSwitchValue == 1 || pushSwitchValue == 2 || pushSwitchValue == 6)
+        {
+            printf("TIME : %f\n", ((double)(timeEnd - timeStart)/1000000));
+        }
+
         pushSwitchValue = 0;
     }
 
     munmap(pfbmap, fbvar.xres * fbvar.yres * 32 / 8);
-    closedir(dp);
     close(fdTextLcd);
     close(fdPushSwitch);
     close(fdFrameBuffer);
