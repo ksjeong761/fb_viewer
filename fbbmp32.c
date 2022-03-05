@@ -135,7 +135,7 @@ void signalCallbackQuit(const int sig)
     exit(1);
 }
 
-//프레임 버퍼에 이미지 출력
+// 프레임 버퍼에 이미지 출력
 void drawImageOnFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
@@ -143,12 +143,12 @@ void drawImageOnFrameBuffer(
     RGBpixel **bitmapPixel,
     const int brightness)
 {
-    int rowIndex, columnIndex;              //반복문 제어 변수
-    RGBpixel pixelRGB;                      //현재 탐색중인 프레임 버퍼에 출력할 비트맵 픽셀 값
-    unsigned int *frameBufferFixelPointer;  //현재 탐색중인 프레임 버퍼 위치
+    int rowIndex, columnIndex;              // 반복문 제어 변수
+    RGBpixel pixelRGB;                      // 현재 탐색중인 프레임 버퍼에 출력할 비트맵 픽셀 값
+    unsigned int *frameBufferFixelPointer;  // 현재 탐색중인 프레임 버퍼 위치
 
-    //이미지 크기가 화면 밖을 벗어나는 경우에 대비해
-    //화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
+    // 이미지 크기가 화면 밖을 벗어나는 경우에 대비해
+    // 화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
     const int minHeight = MIN(bitmapHeader->biHeight, fbvar.yres);
     const int minWidth = MIN(bitmapHeader->biWidth, fbvar.xres);
 
@@ -167,6 +167,68 @@ void drawImageOnFrameBuffer(
                 : convertRGB24toABGR32(pixelRGB);
         }
     }
+}
+
+// 비트맵 파일의 헤더와 이미지를 읽고 동적할당하여 매개변수로 전달한다.
+void loadBitmapImage(
+    const unsigned int *pfbmap,
+    const struct fb_var_screeninfo fbvar, 
+    BMPHeader **bitmapHeaderReference,
+    RGBpixel ***bitmapPixelReference,
+    const char *fileName)
+{
+    int rowIndex, columnIndex;  // 반복문 순회용 변수
+    int readBytes;              // read()로 값을 성공적으로 읽어왔는지 확인하기 위한 변수
+    int fdBitmapInput;          // 비트맵 이미지 파일 디스크립터
+    int bitmapPixelAreaSize;    // 비트맵 헤더를 제외한 이미지 영역 크기
+
+    BMPHeader *bitmapHeader;    // 비트맵 헤더 구조체
+    RGBpixel **bitmapPixel;     // RGB 각 8비트로 구성된 24비트 픽셀
+
+    //이미지 파일 열기
+    fdBitmapInput = open(fileName, O_RDWR);
+    if (fdBitmapInput < 0)
+    {
+        perror("INPUT IMAGE OPEN");
+        exit(1);
+    }
+
+    // 비트맵 헤더 정보를 저장할 공간을 동적할당
+    bitmapHeader = (BMPHeader*)malloc(BITMAP_HEADER_SIZE);
+
+    // 비트맵 헤더 읽기
+    readBytes = read(fdBitmapInput, bitmapHeader, BITMAP_HEADER_SIZE);
+    if (readBytes < 0)
+    {
+        perror("BITMAP HEADER READ ERROR");
+        exit(1);
+    }
+    
+    //비트맵 이미지를 저장할 공간을 동적할당
+    bitmapPixelAreaSize = bitmapHeader-> bfSize - BITMAP_HEADER_SIZE;  
+    bitmapPixel = (RGBpixel**)malloc(bitmapPixelAreaSize);
+
+    //비트맵 이미지 읽기
+    for(rowIndex = bitmapHeader->biHeight - 1; rowIndex >= 0; rowIndex--)
+    {
+        bitmapPixel[rowIndex] = (RGBpixel*)malloc(sizeof(RGBpixel) * bitmapHeader->biWidth);
+
+        for(columnIndex = 0; columnIndex < bitmapHeader->biWidth; columnIndex++)
+        {
+            readBytes = read(fdBitmapInput, &bitmapPixel[rowIndex][columnIndex], sizeof(RGBpixel));
+            if (readBytes < 0)
+            {
+                perror("BITMAP PIXEL READ ERROR");
+                exit(1);
+            }
+        }
+    }
+
+    //동적 할당한 주소를 넘겨준다
+    *bitmapHeaderReference = bitmapHeader;
+    *bitmapPixelReference = bitmapPixel;
+
+    close(fdBitmapInput);
 }
 
 int main(void)
@@ -332,42 +394,7 @@ int main(void)
                 }
 
                 // 다음 파일이 있다면 이미지 읽어오기
-                memset(pfbmap, 0, fbvar.xres * fbvar.yres * 32 / 8);
-                fdBitmapInput = open(fileList[fileIndex], O_RDWR);
-                if (fdBitmapInput < 0)
-                {
-                    perror("INPUT IMAGE OPEN");
-                    exit(1);
-                }
-
-                bitmapHeader = (BMPHeader *)malloc(54);
-                checkRead = read(fdBitmapInput, bitmapHeader, 54);
-                if (checkRead < 0)
-                {
-                    perror("BITMAP HEADER READ ERROR");
-                    exit(1);
-                }
-
-                bitmapPixelSize = bitmapHeader->bfSize - 54;
-                bitmapPixel = (RGBpixel **)malloc(bitmapPixelSize);
-                for (i = 0; i < bitmapHeader->biHeight; i++)
-                {
-                    bitmapPixel[i] = (RGBpixel *)malloc(sizeof(RGBpixel) * bitmapHeader->biWidth);
-                }
-
-                for (i = bitmapHeader->biHeight - 1; i >= 0; i--)
-                {
-                    for (j = 0; j < bitmapHeader->biWidth; j++)
-                    {
-                        checkRead = read(fdBitmapInput, &bitmapPixel[i][j], sizeof(RGBpixel));
-                        if (checkRead < 0)
-                        {
-                            perror("BITMAP PIXEL READ ERROR");
-                            exit(1);
-                        }
-                    }
-                }
-
+                loadBitmapImage(pfbmap, fbvar, &bitmapHeader, &bitmapPixel, fileList[fileIndex]);
                 isImageLoaded = true;
 
                 // Text LCD를 통해 헤더 정보(파일명, 해상도, BPP) 출력
@@ -417,42 +444,7 @@ int main(void)
                 }
                 
                 // 이전 파일이 있다면 이미지 읽어오기
-                memset(pfbmap, 0, fbvar.xres * fbvar.yres * 32 / 8);
-                fdBitmapInput = open(fileList[fileIndex], O_RDWR);
-                if (fdBitmapInput < 0)
-                {
-                    perror("INPUT IMAGE OPEN");
-                    exit(1);
-                }
-
-                bitmapHeader = (BMPHeader *)malloc(54);
-                checkRead = read(fdBitmapInput, bitmapHeader, 54);
-                if (checkRead < 0)
-                {
-                    perror("BITMAP HEADER READ ERROR");
-                    exit(1);
-                }
-
-                bitmapPixelSize = bitmapHeader->bfSize - 54;
-                bitmapPixel = (RGBpixel **)malloc(bitmapPixelSize);
-                for (i = 0; i < bitmapHeader->biHeight; i++)
-                {
-                    bitmapPixel[i] = (RGBpixel *)malloc(sizeof(RGBpixel) * bitmapHeader->biWidth);
-                }
-
-                for (i = bitmapHeader->biHeight - 1; i >= 0; i--)
-                {
-                    for (j = 0; j < bitmapHeader->biWidth; j++)
-                    {
-                        checkRead = read(fdBitmapInput, &bitmapPixel[i][j], sizeof(RGBpixel));
-                        if (checkRead < 0)
-                        {
-                            perror("BITMAP PIXEL READ ERROR");
-                            exit(1);
-                        }
-                    }
-                }
-
+                loadBitmapImage(pfbmap, fbvar, &bitmapHeader, &bitmapPixel, fileList[fileIndex]);
                 isImageLoaded = true;
 
                 // Text LCD를 통해 헤더 정보(파일명, 해상도, BPP) 출력
