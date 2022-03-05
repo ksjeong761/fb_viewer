@@ -355,7 +355,7 @@ void loadBitmapImage(
     close(fdBitmapInput);
 }
 
-int main(void)
+int main(int argc, char* argv[])
 {
     // 파일 디스크립터
     int fdPushSwitch;                           // Push Switch 드라이버
@@ -385,6 +385,35 @@ int main(void)
 
     // 시간 재기
     clock_t timeStart, timeEnd;                 // timeEnd-timeStart로 시간을 측정한다.
+
+    // 매개변수가 없을 시 32BPP, 실제 장치와 관계 없이 콘솔에서만 동작한다.
+    if (argc >= 2)
+    {
+        // 1번 매개변수를 통해 16BPP 모드로 전환한다. 하드웨어가 지원하지 않을 경우 사용할 수 없다.
+        if (atoi(argv[1]) == BPP_16)
+        {
+            frameBufferBPP = atoi(argv[1]);
+        }
+        else
+        {
+            printf("INVALID ARGUMENT 1 - ex) ./fbbmp 16");
+            exit(1);
+        }
+    }
+
+    if (argc >= 3)
+    {
+        // 2번 매개변수를 통해 실제 장치가 연결되었을 때와 동일하게 동작하도록 한다.
+        if (!strcmp(argv[2], "device"))
+        {
+            isDeviceConnected = true;
+        }
+        else
+        {
+            printf("INVALID ARGUMENT 2 - ex) ./fbbmp 32 device");
+            exit(1);
+        }
+    }
 
     if (isDeviceConnected)
     {
@@ -626,8 +655,8 @@ int main(void)
                 break;
         }
 
+        // 시간 재기
         timeEnd = clock();
-
         if (pushSwitchValue == 1 || pushSwitchValue == 2 || pushSwitchValue == 6)
         {
             printf("TIME : %f\n", ((double)(timeEnd - timeStart)/1000000));
