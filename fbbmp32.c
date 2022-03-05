@@ -69,7 +69,7 @@ typedef struct bmpHeader
 } BMPHeader;
 #pragma pack(pop)
 
-//값이 지정한 범위를 벗어나지 않도록 한다.
+// 값이 지정한 범위를 벗어나지 않도록 한다.
 unsigned char thresholding(int value, const int rangeMin, const int rangeMax)
 {
     if (value < rangeMin) value = rangeMin;
@@ -78,7 +78,7 @@ unsigned char thresholding(int value, const int rangeMin, const int rangeMax)
     return value;
 }
 
-//픽셀의 밝기 값을 변화시킨다. 밝기 값의 범위는 0 ~ 255(unsigned char)이다.
+// 픽셀의 밝기 값을 변화시킨다. 밝기 값의 범위는 0 ~ 255(unsigned char)이다.
 RGBpixel changePixelBrightness(RGBpixel pixelBrightness, const int pixelBrightnessDelta)
 {
     pixelBrightness.red = thresholding(pixelBrightness.red + pixelBrightnessDelta, 0, 255);
@@ -88,42 +88,42 @@ RGBpixel changePixelBrightness(RGBpixel pixelBrightness, const int pixelBrightne
     return pixelBrightness;
 }
 
-//24비트 RGB 픽셀을 32비트 ABGR 픽셀로 순서 변환과 함께 확장한다.
+// 24비트 RGB 픽셀을 32비트 ABGR 픽셀로 순서 변환과 함께 확장한다.
 unsigned int convertRGB24toABGR32(const RGBpixel pixel)
 {
-    const unsigned int alpha = 0;   //투명도
+    const unsigned int alpha = 0;   // 투명도
     
     return ((0 << 24) | (pixel.blue << 16) | (pixel.green << 8) | (pixel.red << 0));
 }
 
-//24비트 RGB 픽셀을 16비트 BGR 픽셀로 순서 변환과 함께 축소한다.
+// 24비트 RGB 픽셀을 16비트 BGR 픽셀로 순서 변환과 함께 축소한다.
 unsigned short convertRGB24toBGR16(RGBpixel pixel)
 {
 	return ((pixel.blue << 11) | (pixel.green << 6) | (pixel.red << 0));
 }
 
-//16비트 BGR 픽셀을 24비트 BGR 픽셀로 확장한다.
+// 16비트 BGR 픽셀을 24비트 BGR 픽셀로 확장한다.
 unsigned int convertBGR16toBGR24(unsigned short pixel)
 {
-    //BGR 값을 추출하기 위한 마스크
+    // BGR 값을 추출하기 위한 마스크
     unsigned short maskBlue = 65535-2047;
     unsigned short maskGreen = 2047-31;
     unsigned short maskRed = 31;
 
-    //BGR 값 추출
-    unsigned short blue = pixel & maskBlue;    //11111 000000 00000
-    unsigned short green = pixel & maskGreen;  //00000 111111 00000
-    unsigned short red = pixel & maskRed;      //00000 000000 11111
+    // BGR 값 추출
+    unsigned short blue = pixel & maskBlue;    // 11111 000000 00000
+    unsigned short green = pixel & maskGreen;  // 00000 111111 00000
+    unsigned short red = pixel & maskRed;      // 00000 000000 11111
 
-    //공백 제거
-    blue = blue >> 11;                         //00000 000000 11111
-    green = green >> 6;                        //00000 000000 11111
-    red = red >> 0;                            //00000 000000 11111
+    // 공백 제거
+    blue = blue >> 11;                         // 00000 000000 11111
+    green = green >> 6;                        // 00000 000000 11111
+    red = red >> 0;                            // 00000 000000 11111
 
-    //24비트에 맞춰 확장 준비
-    blue = blue << 3;                          //00000 000111 11000
-    green = green << 3;                        //00000 000111 11000
-    red = red << 3;                            //00000 000111 11000
+    // 24비트에 맞춰 확장 준비
+    blue = blue << 3;                          // 00000 000111 11000
+    green = green << 3;                        // 00000 000111 11000
+    red = red << 3;                            // 00000 000111 11000
 
     return ((blue << 16) | (green << 8) | (red << 0));
 }
@@ -133,6 +133,83 @@ void signalCallbackQuit(const int sig)
 {
     quit = true;
     exit(1);
+}
+
+// 프레임 버퍼에서 이미지를 읽어와 24BPP 비트맵 파일에 저장한다.
+void captureFrameBuffer(
+    unsigned int *pfbmap,
+    const struct fb_var_screeninfo fbvar, 
+    BMPHeader *bitmapHeader)
+{
+    int fdBitmapOutput;                     // 비트맵 출력 파일 디스크립터
+    BMPHeader *bitmapOutputHeader;          // 출력 비트맵 헤더 구조체
+    int rowIndex, columnIndex;              // 반복문 제어 변수
+    unsigned int *frameBufferFixelPointer;  // 현재 탐색중인 프레임 버퍼 위치
+    unsigned int fixelRGBValue;             // 현재 탐색중인 프레임 버퍼의 픽셀 값
+
+    // 이미지 크기가 화면 밖을 벗어나는 경우에 대비해
+    // 화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
+    const int minHeight = MIN(bitmapHeader->biHeight, fbvar.yres);
+    const int minWidth = MIN(bitmapHeader->biWidth, fbvar.xres);
+
+    // 기존에 캡처된 파일이 있다면 지운다.
+    if (access(OUTPUT_BITMAP_FILE_NAME, F_OK) >= 0)
+    {
+        unlink(OUTPUT_BITMAP_FILE_NAME);
+    }
+
+    // 캡처된 이미지를 저장하기 위해 파일을 만들어 연다.
+    fdBitmapOutput = open(OUTPUT_BITMAP_FILE_NAME, O_CREAT | O_WRONLY, 0777);
+    if (fdBitmapOutput < 0)
+    {
+        perror("OUTPUT IMAGE OPEN");
+        exit(1);
+    }
+
+    // 비트맵 헤더 복사
+    memcpy(&bitmapOutputHeader, &bitmapHeader, sizeof(BMPHeader));
+
+    // 비트맵 헤더 값 수정
+    bitmapOutputHeader->bfSize = minWidth * minHeight * 3 + BITMAP_HEADER_SIZE;   // 파일 크기
+    bitmapOutputHeader->biSizeImage = minWidth * minHeight * 3;                   // 비트맵 이미지의 픽셀 데이터 크기
+    bitmapOutputHeader->biWidth = minWidth;                                       // 비트맵 이미지의 가로 크기
+    bitmapOutputHeader->biHeight = minHeight;                                     // 비트맵 이미지의 세로 크기
+    bitmapOutputHeader->biBitCount = BITMAP_DEFAULT_BPP;                          // BPP(Bits Per Pixel)
+
+    // 비트맵 헤더를 파일에 쓴다.
+    if (write(fdBitmapOutput, bitmapOutputHeader, sizeof(BMPHeader)) < 0)
+    {
+        perror("WRITE BITMAP HEADER");
+        exit(1);
+    }
+
+    // 프레임 버퍼 탐색
+    for(rowIndex = minHeight - 1; rowIndex >= 0; rowIndex--)
+    {
+        for(columnIndex = 0; columnIndex < minWidth; columnIndex++)
+        {
+            // 현재 탐색중인 프레임 버퍼 위치
+            frameBufferFixelPointer = pfbmap + rowIndex * fbvar.xres + columnIndex;
+
+            // 프레임 버퍼의 픽셀 값을 읽어온다.
+            fixelRGBValue = *frameBufferFixelPointer;
+
+            // 16BPP 프레임 버퍼를 캡처할 경우 24BPP 이미지로 픽셀을 확장한다.
+            if(frameBufferBPP == BPP_16)
+            {
+                fixelRGBValue = convertBGR16toBGR24(fixelRGBValue);
+            }
+
+            // 읽어온 픽셀 값을 24BPP 비트맵 파일에 저장한다.
+            if (write(fdBitmapOutput, &fixelRGBValue, BITMAP_DEFAULT_BPP/8) < 0)
+            {
+                perror("WRITE BITMAP PIXEL");
+                exit(1);
+            }
+        }
+    }
+
+    close(fdBitmapOutput);
 }
 
 // 프레임 버퍼에 이미지 출력
@@ -152,15 +229,15 @@ void drawImageOnFrameBuffer(
     const int minHeight = MIN(bitmapHeader->biHeight, fbvar.yres);
     const int minWidth = MIN(bitmapHeader->biWidth, fbvar.xres);
 
-    //프레임 버퍼를 탐색한다.
+    // 프레임 버퍼를 탐색한다.
     for(rowIndex = 0; rowIndex < minHeight; rowIndex++)
     {
         for(columnIndex = 0; columnIndex < minWidth; columnIndex++)
         {
-            //밝기 조절 기능에 의해 변경된 밝기 값을 반영한다.
+            // 밝기 조절 기능에 의해 변경된 밝기 값을 반영한다.
             pixelRGB = changePixelBrightness(bitmapPixel[rowIndex][columnIndex], brightness);
 
-            //24BPP인 기존 비트맵 이미지를 설정한 BPP에 맞게 프레임 버퍼에 출력한다.
+            // 24BPP인 기존 비트맵 이미지를 설정한 BPP에 맞게 프레임 버퍼에 출력한다.
             frameBufferFixelPointer = pfbmap + rowIndex * fbvar.xres + columnIndex;
             *frameBufferFixelPointer = (frameBufferBPP == BPP_16)
                 ? convertRGB24toBGR16(pixelRGB)
@@ -231,53 +308,38 @@ void loadBitmapImage(
     close(fdBitmapInput);
 }
 
+
 int main(void)
 {
     // 파일 디스크립터
-    int fdBitmapInput;  // 비트맵 입력 파일
-    int fdBitmapOutput; // 비트맵 출력 파일
-    int fdPushSwitch;   // 푸시 스위치 드라이버
-    int fdTextLcd;      // Text LCD 드라이버
-    int fdFrameBuffer;  // 프레임 버퍼 드라이버
+    int fdPushSwitch;                           // Push Switch 드라이버
+    int fdTextLcd;                              // Text LCD 드라이버
+    int fdFrameBuffer;                          // 프레임 버퍼 드라이버 파일 디스크립터
+
+    int pushSwitchValue;                        // Push Switch 인덱스 값, switch-case문에 들어간다.
+    int pushSwitchIndex;                        // 지속적으로 푸시 스위치를 스캔해서 눌린 버튼을 찾는다.
+
+    // 장치별 버퍼
+    unsigned char pushSwitchBuffer[PUSH_SWITCH_BUFFER_SIZE] = {0};  // 버튼이 눌리면 값이 1로 변한다.
+    unsigned char textLCDBuffer[2][TEXT_LCD_LINE_SIZE] = {0};       // 파일명, 해상도 및 BPP(Bits Per Pixel)를 표시한다.
 
     // 비트맵 이미지 관련
-    int bitmapPixelSize;          // 비트맵 픽셀 영역의 크기
-    BMPHeader *bitmapHeader;      // 입력 비트맵 헤더 구조체
-    BMPHeader bitmapOutputHeader; // 출력 비트맵 헤더 구조체
-    RGBpixel **bitmapPixel;       // RGB 각 8비트로 구성된 24비트 픽셀
-    int brightness = 0;           // 4, 5번 버튼으로 조절할 픽셀의 밝기
-
-    // 푸시 스위치
-    int pushSwitchValue = 0;                   // 푸시 스위치 인덱스 값, switch-case문에 들어간다.
-    int pushSwitchBufferSize;                  // 푸시 스위치 버퍼 크기, 값은 9이다.
-    unsigned char pushSwitchBuffer[9] = {0};   // 푸시 스위치 버퍼, 버튼이 눌리면 값이 1로 변한다.
-
-    // Text LCD
-    unsigned char textLcdString[32] = {0};     // Text LCD에 write 하게 될 버퍼이다. FirstLine, SecondLine을 합친 문자열이 저장간다.
-    unsigned char textLcdFirstLine[16] = {0};  // Text LCD의 첫 번째 줄, 파일명이 저장된다.
-    unsigned char textLcdSecondLine[16] = {0}; // Text LCD의 두 번째 줄, 해상도, BPP(Bits Per Pixel)가 저장된다.
+    BMPHeader *bitmapHeader;                    // 입력 비트맵 헤더 구조체
+    RGBpixel **bitmapPixel;                     // RGB 각 8비트로 구성된 24비트 픽셀
+    int brightness;	                            // 4, 5번 버튼으로 조절할 픽셀의 밝기
+    bool isImageLoaded;                         // 이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
 
     // 프레임 버퍼
-    struct fb_var_screeninfo fbvar; // 프레임 버퍼의 가변 정보를 저장한다.
-    unsigned int *pfbmap;           // mmap으로 매핑시킬 주소 공간을 가리킬 포인터
+    unsigned int *pfbmap;                       // mmap으로 매핑시킬 주소 공간을 가리킬 포인터
+    struct fb_var_screeninfo fbvar;             // 프레임 버퍼의 가변 정보를 저장한다.
 
-    // 디렉토리
-    DIR *dp;
-    struct dirent *dent;
-    char *ext;
+    // 파일 목록
+    unsigned char *fileList[FILE_NAME_ARRAY_SIZE] = {NULL};     // readdir()로 디렉토리의 .bmp파일 목록을 저장한다.
+    int fileIndex = -1;                                         // 1, 2번 버튼으로 다루게 될 fileList 배열의 인덱스이다.
 
-    unsigned char *fileList[FILE_NAME_ARRAY_SIZE] = {NULL}; // readdir()로 디렉토리의 .bmp파일 목록을 저장한다.
-    int fileIndex = -1;                    // 1, 2번 버튼으로 다루게 될 fileList 배열의 인덱스이다.
-    int fileTempIndex = 0;                // 6번 버튼으로 프레임 버퍼를 캡처할 경우 fileIndex가 초기화 되므로 값을 임시로 저장하기 위한 변수이다.
+    // 시간 재기
+    clock_t timeStart, timeEnd;                 // timeEnd-timeStart로 시간을 측정한다.
 
-    //시간 측정
-    clock_t timeStart; // timeEnd-timeStart로 시간을 측정한다.
-    clock_t timeEnd;   // timeEnd-timeStart로 시간을 측정한다.
-
-    int checkRead;     // read() 호출 시 에러가 발생하는 지 확인하기 위한 변수
-    bool isImageLoaded;                         //이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
-
-    int i, j; // 반복문 제어 변수
 
     // 푸시 스위치 드라이버 열기
     fdPushSwitch = open(DEVICE_PUSH_SWITCH, O_RDWR);
@@ -296,11 +358,7 @@ int main(void)
     }
 
     // Text LCD 값을 ' '로 초기화
-    for (i = 0; i < 32; i++)
-    {
-        textLcdString[i] = ' ';
-    }
-    write(fdTextLcd, textLcdString, 32);
+    write(fdTextLcd, textLCDBuffer, TEXT_LCD_BUFFER_SIZE); 
 
     // 무한 반복문을 종료하기 위한 시그널 등록
     (void)signal(SIGINT, signalCallbackQuit);
@@ -356,13 +414,15 @@ int main(void)
     // 비트맵 확장자를 가진 파일 목록 수집
     searchFilesInPathByExtention(fileList, ".", "bmp");
 
-    //-------------------BUTTON FUNCTION---------------------------
-    pushSwitchBufferSize = sizeof(pushSwitchBuffer);
-    printf("Press <ctrl+c> to quit. \n");
     while (!quit)
     {
-        usleep(1000000);
-        printf("looping.. select numbers (1~9)\n");
+        printf("1 : Next image\n");
+        printf("2 : Previous image\n");
+        printf("3 : Clear frame buffer\n");
+        printf("4 : Increase brightness\n");
+        printf("5 : Decrease brightness\n");
+        printf("6 : Capture frame buffer\n");
+        printf("Ctrl + c : quit\n");
 
         // Push Switch 입력을 받고 인덱스에 1을 더해준다. (0~8 -> 1~9)
         // read(fdPushSwitch, &pushSwitchBuffer, pushSwitchBufferSize);
@@ -379,17 +439,18 @@ int main(void)
         
         switch (pushSwitchValue)
         {
-            case 1: // OPEN NEXT FILE
+            case 1:
                 printf("case 1 : OPEN NEXT FILE\n");
-                printf("index:%d, %s\n", fileIndex, textLcdString); // FOR DEBUG
                 
-                // 다음 파일이 있는지 체크
-                if ((++fileIndex) > 9)
-                    fileIndex = 9;
+                clearFrameBuffer(pfbmap, fbvar);
+                brightness = 0;
 
+                // 다음 파일이 있는지 체크
+                fileIndex = thresholding(fileIndex + 1, 0, FILE_NAME_ARRAY_SIZE - 1);
                 if (fileList[fileIndex] == NULL)
                 {
-                    printf("NEXT FILE NOT EXISTS, INDEX:%d\n", fileIndex);
+                    printf("NEXT FILE NOT EXISTS, INDEX:%d\n", fileIndex); 
+                    fileIndex--;    
                     break;
                 }
 
@@ -424,22 +485,22 @@ int main(void)
 
                 write(fdTextLcd, textLcdString, 32);
 
-                //프레임 버퍼에 이미지 출력
+                // 프레임 버퍼에 이미지 출력
                 drawImageOnFrameBuffer(pfbmap, fbvar, bitmapHeader, bitmapPixel, brightness);
-                
                 break;
 
-            case 2: // OPEN PREVIOUS FILE
+            case 2:
                 printf("case 2 : OPEN PREVIOUS FILE\n");
-                printf("index:%d, %s\n", fileIndex, textLcdString); // FOR DEBUG
                 
-                // 이전 파일이 있는지 체크
-                if ((--fileIndex) < 0)
-                    fileIndex = 0;
+                clearFrameBuffer(pfbmap, fbvar);
+                brightness = 0;
 
+                // 이전 파일이 있는지 체크
+                fileIndex = thresholding(fileIndex - 1, 0, FILE_NAME_ARRAY_SIZE - 1);
                 if (fileList[fileIndex] == NULL)
                 {
-                    printf("PREVIOUS FILE NOT EXISTS, INDEX:%d\n", fileIndex);
+                    printf("PREVIOUS FILE NOT EXISTS, INDEX:%d\n", fileIndex);    
+                    fileIndex++;
                     break;
                 }
                 
@@ -478,8 +539,12 @@ int main(void)
                 break;
 
             case 3: // CLEAR FRAME BUFFER
-                printf("case 3:\n");
-                memset(pfbmap, 0, fbvar.xres * fbvar.yres * 32 / 8);
+                printf("case 3 : CLEAR FRAME BUFFER\n");
+
+                clearFrameBuffer(pfbmap, fbvar);
+                free(bitmapHeader);
+                free(bitmapPixel);
+                isImageLoaded = false;
                 break;
 
             case 4:
@@ -522,40 +587,9 @@ int main(void)
                     printf("IMAGE IS NOT LOADED\n");
                     break;
                 }
-
-                bitmapOutputHeader = *bitmapHeader;
-                bitmapOutputHeader.bfSize = MIN(bitmapHeader->biWidth, fbvar.xres) * MIN(bitmapHeader->biHeight, fbvar.yres) * 3 + 54; // 파일 크기
-                bitmapOutputHeader.biSizeImage = MIN(bitmapHeader->biWidth, fbvar.xres) * MIN(bitmapHeader->biHeight, fbvar.yres) * 3; // 비트맵 이미지의 픽셀 데이터 크기
-                bitmapOutputHeader.biWidth = MIN(bitmapHeader->biWidth, fbvar.xres);                                                   // 비트맵 이미지의 가로 크기
-                bitmapOutputHeader.biHeight = MIN(bitmapHeader->biHeight, fbvar.yres);                                                 // 비트맵 이미지의 세로 크기
-                // bitmapOutputHeader.biXPelsPerMeter;  // 그림의 가로 해상도(미터당 픽셀)
-                // bitmapOutputHeader.biYPelsPerMeter;  // 그림의 세로 해상도(미터당 픽셀)
-
-                if (access(OUTPUT_BITMAP_FILE_NAME, F_OK) >= 0) // BITMAP OUTPUT FILE DELETE
-                    unlink(OUTPUT_BITMAP_FILE_NAME);
-
-                fdBitmapOutput = open(OUTPUT_BITMAP_FILE_NAME, O_CREAT | O_WRONLY, 0777); // BITMAP OUTPUT FILE OPEN
-                if (fdBitmapOutput < 0)
-                {
-                    perror("OUTPUT IMAGE OPEN");
-                    exit(1);
-                }
-                if (write(fdBitmapOutput, &bitmapOutputHeader, 54) < 0)
-                {
-                    perror("WRITE BITMAP HEADER");
-                    exit(1);
-                }
-                for (i = MIN(bitmapHeader->biHeight, fbvar.yres) - 1; i >= 0; i--)
-                {
-                    for (j = 0; j < MIN(bitmapHeader->biWidth, fbvar.xres); j++)
-                    {
-                        if (write(fdBitmapOutput, pfbmap + i * fbvar.xres + j, 24 / 8) < 0)
-                        {
-                            perror("WRITE BITMAP PIXEL");
-                            exit(1);
-                        }
-                    }
-                }
+                
+                // 프레임 버퍼 캡처
+                captureFrameBuffer(pfbmap,fbvar, bitmapHeader);
 
                 // 새 파일이 추가되었으므로 파일 목록을 다시 불러온다.
                 searchFilesInPathByExtention(fileList, ".", "bmp");
@@ -575,12 +609,10 @@ int main(void)
         pushSwitchValue = 0;
     }
 
-    munmap(pfbmap, fbvar.xres * fbvar.yres * 32 / 8);
+    munmap(pfbmap, fbvar.xres * fbvar.yres * frameBufferBPP / 8);
     close(fdTextLcd);
     close(fdPushSwitch);
     close(fdFrameBuffer);
-    close(fdBitmapInput);
-    close(fdBitmapOutput);
 
     return 0;
 }
