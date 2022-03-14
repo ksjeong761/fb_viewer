@@ -1,21 +1,6 @@
 #ifndef _FBBMP_
 #define _FBBMP_
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h> 
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <signal.h>
-#include <sys/mman.h>
-#include <linux/fb.h>
-#include <string.h>
-#include <dirent.h>
-#include <time.h>
-
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -24,9 +9,11 @@
 #define DEVICE_FRAME_BUFFER "/dev/fb0"
 
 #define OUTPUT_BITMAP_FILE_NAME "output.bmp"
+#define BITMAP_EXTENSION "bmp"
 
 #define PUSH_SWITCH_BUFFER_SIZE 9       // Push Switch의 버튼 갯수는 9개다.
-#define TEXT_LCD_LINE_SIZE 16           // Text LCD는 한 줄당 16개 문자를 출력할 수 있다.
+#define TEXT_LCD_HEIGHT 2               // Text LCD는 2개의 행을 가진다.
+#define TEXT_LCD_WIDTH 16               // Text LCD는 한 줄당 16개 문자를 출력할 수 있다.
 #define TEXT_LCD_BUFFER_SIZE 32         // Text LCD는 총 32개 문자를 출력할 수 있다.
 
 #define FILE_NAME_ARRAY_SIZE 64         // 비트맵 파일 이름을 64개 까지만 저장할 것이다.
@@ -38,9 +25,14 @@
 #define BPP_24 24                       // 24 BPP (Bits Per Pixel)
 #define BPP_32 32                       // 32 BPP (Bits Per Pixel)
 
-unsigned char quit = 0;                 // 무한 반복문 종료를 위한 변수
-int frameBufferBPP = BPP_32;            // 프레임 버퍼의 BPP를 설정하기 위한 변수
-bool isDeviceConnected = false;         // 장치가 연결되어 있는지 확인하기 위한 변수
+#define UCHAR_MIN 0                     // unsigned char 최솟값
+#define UCHAR_MAX 255                   // unsigned char 최댓값
+
+#define BRIGHTNESS_DELTA 30             // 변화시킬 프레임 버퍼 밝기
+
+extern unsigned char quit;              // 무한 반복문 종료를 위한 변수
+extern int frameBufferBPP;              // 프레임 버퍼의 BPP를 설정하기 위한 변수
+extern bool isDeviceConnected;          // 장치가 연결되어 있는지 확인하기 위한 변수
 
 typedef struct pixel_24bit
 {
@@ -87,19 +79,22 @@ RGBpixel changePixelBrightness(
 unsigned int convertRGB24toABGR32(const RGBpixel pixel);
 
 // 24비트 RGB 픽셀을 16비트 BGR 픽셀로 순서 변환과 함께 축소한다.
-unsigned short convertRGB24toBGR16(RGBpixel pixel);
+unsigned short convertRGB24toBGR16(const RGBpixel pixel);
 
 // 16비트 BGR 픽셀을 24비트 BGR 픽셀로 확장한다.
-unsigned int convertBGR16toBGR24(unsigned short pixel);
+unsigned int convertBGR16toBGR24(const unsigned short pixel);
 
 // SIGINT를 받으면 호출되는 함수이다. 무한 반복문을 종료하기 위해 사용한다.
 void signalCallbackQuit(const int sig);
 
 //입력한 경로에서 특정 확장자를 가진 파일을 수집한다.
 void searchFilesInPathByExtention(
-    unsigned char *fileNamesReference[FILE_NAME_ARRAY_SIZE],
-    const char *targetPath,
-    const char *targetExtension);
+    unsigned char *pFileNamesArray[FILE_NAME_ARRAY_SIZE],
+    const char *pTargetPath,
+    const char *pTargetExtension);
+
+// 프레임 버퍼 크기 구하기
+int calculateFrameBufferSize(const struct fb_var_screeninfo fbvar);
 
 // 프레임 버퍼 비우기
 void clearFrameBuffer(
@@ -110,22 +105,22 @@ void clearFrameBuffer(
 void drawImageOnFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader *bitmapHeader,
-    RGBpixel **bitmapPixel,
+    BMPHeader *pBitmapHeader,
+    RGBpixel **pBitmapPixel2dArray,
     const int brightness);
 
 // 프레임 버퍼에서 이미지를 읽어와 24BPP 비트맵 파일에 저장한다.
 void captureFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader *bitmapHeader);
+    BMPHeader *pBitmapHeader);
 
-// 비트맵 파일의 헤더와 이미지를 읽고 동적할당하여 매개변수로 전달한다.
+// 비트맵 파일의 헤더와 이미지를 읽고 동적 할당하여 매개변수로 포인터를 전달한다.
 void loadBitmapImage(
     const unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader **bitmapHeaderReference,
-    RGBpixel ***bitmapPixelReference,
-    const char *fileName);
+    BMPHeader **pReturnBitmapHeader,
+    RGBpixel ***pReturnBitmapPixel2dArray,
+    const char *pFileName);
 
 #endif

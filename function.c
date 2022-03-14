@@ -1,3 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h> 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+#include <sys/mman.h>
+#include <linux/fb.h>
+#include <string.h>
+#include <dirent.h>
+#include <time.h>
+
 #include "fbbmp.h"
 
 // 값이 지정한 범위를 벗어나지 않도록 한다.
@@ -17,9 +32,9 @@ RGBpixel changePixelBrightness(
     RGBpixel pixelBrightness,
     const int pixelBrightnessDelta)
 {
-    pixelBrightness.red = thresholding(pixelBrightness.red + pixelBrightnessDelta, 0, 255);
-    pixelBrightness.green = thresholding(pixelBrightness.green + pixelBrightnessDelta, 0, 255);
-    pixelBrightness.blue = thresholding(pixelBrightness.blue + pixelBrightnessDelta, 0, 255);
+    pixelBrightness.red = thresholding(pixelBrightness.red + pixelBrightnessDelta, UCHAR_MIN, UCHAR_MAX);
+    pixelBrightness.green = thresholding(pixelBrightness.green + pixelBrightnessDelta, UCHAR_MIN, UCHAR_MAX);
+    pixelBrightness.blue = thresholding(pixelBrightness.blue + pixelBrightnessDelta, UCHAR_MIN, UCHAR_MAX);
 
     return pixelBrightness;
 }
@@ -33,18 +48,18 @@ unsigned int convertRGB24toABGR32(const RGBpixel pixel)
 }
 
 // 24비트 RGB 픽셀을 16비트 BGR 픽셀로 순서 변환과 함께 축소한다.
-unsigned short convertRGB24toBGR16(RGBpixel pixel)
+unsigned short convertRGB24toBGR16(const RGBpixel pixel)
 {
 	return ((pixel.blue << 11) | (pixel.green << 6) | (pixel.red << 0));
 }
 
 // 16비트 BGR 픽셀을 24비트 BGR 픽셀로 확장한다.
-unsigned int convertBGR16toBGR24(unsigned short pixel)
+unsigned int convertBGR16toBGR24(const unsigned short pixel)
 {
     // BGR 값을 추출하기 위한 마스크
-    unsigned short maskBlue = 65535-2047;
-    unsigned short maskGreen = 2047-31;
-    unsigned short maskRed = 31;
+    const unsigned short maskBlue = 65535-2047;
+    const unsigned short maskGreen = 2047-31;
+    const unsigned short maskRed = 31;
 
     // BGR 값 추출
     unsigned short blue = pixel & maskBlue;    // 11111 000000 00000
@@ -71,45 +86,49 @@ void signalCallbackQuit(const int sig)
     exit(1);
 }
 
-//입력한 경로에서 특정 확장자를 가진 파일을 수집한다.
+// 입력한 경로에서 특정 확장자를 가진 파일을 수집한다.
 void searchFilesInPathByExtention(
-    unsigned char *fileNamesReference[FILE_NAME_ARRAY_SIZE],
-    const char *targetPath,
-    const char *targetExtension)
+    unsigned char *pFileNameArray[FILE_NAME_ARRAY_SIZE],
+    const char *pTargetPath,
+    const char *pTargetExtension)
 {
-    DIR *dp;                    //디렉토리를 열고 읽기 위한 포인터
-    struct dirent *dent;        //디렉토리 정보를 저장할 포인터
-
-    char *currentFileName;      //현재 탐색중인 파일명을 나타낸다.
-    char *currentExtension;     //현재 탐색중인 파일의 확장자를 나타낸다.
-    int currentFileIndex = 0;   //파일 탐색용 인덱스
-    
-    //디렉토리 열기
-    if ((dp = opendir(targetPath)) == NULL)
+    // 디렉토리 열기
+    DIR *pDIR = opendir(pTargetPath);
+    if (!pDIR)
     {
-        perror("DIRECTORY OPEN");
+        perror("Failed to open directory.");
         exit(1);
     }
 
-    //디렉토리 탐색
-    while((dent = readdir(dp))) 
+    // 디렉토리 탐색
+    int fileNameIndex = 0;
+    struct dirent *pDirent;
+    while (pDirent = readdir(pDIR)) 
     {
-        currentFileName = dent->d_name;
+        // 현재 탐색중인 파일명 얻기
+        char *pCurrentFileName = pDirent->d_name;
 
-        if (!strcmp(currentFileName, ".")) continue;
-        if (!strcmp(currentFileName, "..")) continue;
+        // 현재 디렉토리, 부모 디렉토리는 무시
+        if (!strcmp(pCurrentFileName, ".")) continue;
+        if (!strcmp(pCurrentFileName, "..")) continue;
 
-        //확장자 체크
-        currentExtension = strrchr(currentFileName, '.');
-
-        if (currentExtension == NULL) continue;
-        if (strcmp(currentExtension + 1, targetExtension)) continue;
+        // 찾고 있던 확장자인지 확인
+        const char *pCurrentExtension = strrchr(pCurrentFileName, '.');
+        if (!pCurrentExtension) continue;
+        if (strcmp(pCurrentExtension + 1, pTargetExtension)) continue;
 
         //파일 목록 수집
-        fileNamesReference[currentFileIndex++] = currentFileName;
+        pFileNameArray[fileNameIndex++] = pCurrentFileName;
     }
 
-    closedir(dp);
+    closedir(pDIR);
+}
+
+// 프레임 버퍼 크기 구하기
+int calculateFrameBufferSize(const struct fb_var_screeninfo fbvar)
+{
+    // 가로 * 세로 * BPP에 따른 바이트 크기 (32BPP : 4Bytes / 16BPP : 2Bytes)
+    return fbvar.xres * fbvar.yres * frameBufferBPP / 8;
 }
 
 // 프레임 버퍼 비우기
@@ -117,39 +136,35 @@ void clearFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar)
 {
-    memset(pfbmap, 0, fbvar.xres * fbvar.yres * frameBufferBPP / 8);
+    memset(pfbmap, 0, calculateFrameBufferSize(fbvar));
 }
 
 // 프레임 버퍼에 이미지 출력
 void drawImageOnFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader *bitmapHeader,
-    RGBpixel **bitmapPixel,
+    BMPHeader *pBitmapHeader,
+    RGBpixel **pBitmapPixel2dArray,
     const int brightness)
 {
-    int rowIndex, columnIndex;              // 반복문 제어 변수
-    RGBpixel pixelRGB;                      // 현재 탐색중인 프레임 버퍼에 출력할 비트맵 픽셀 값
-    unsigned int *frameBufferFixelPointer;  // 현재 탐색중인 프레임 버퍼 위치
-
     // 이미지 크기가 화면 밖을 벗어나는 경우에 대비해
     // 화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
-    const int minHeight = MIN(bitmapHeader->biHeight, fbvar.yres);
-    const int minWidth = MIN(bitmapHeader->biWidth, fbvar.xres);
+    const int minHeight = MIN(pBitmapHeader->biHeight, fbvar.yres);
+    const int minWidth = MIN(pBitmapHeader->biWidth, fbvar.xres);
 
     // 프레임 버퍼를 탐색한다.
-    for(rowIndex = 0; rowIndex < minHeight; rowIndex++)
+    for (int rowIndex = 0; rowIndex < minHeight; rowIndex++)
     {
-        for(columnIndex = 0; columnIndex < minWidth; columnIndex++)
+        for (int columnIndex = 0; columnIndex < minWidth; columnIndex++)
         {
             // 밝기 조절 기능에 의해 변경된 밝기 값을 반영한다.
-            pixelRGB = changePixelBrightness(bitmapPixel[rowIndex][columnIndex], brightness);
+            RGBpixel pixelRGB = changePixelBrightness(pBitmapPixel2dArray[rowIndex][columnIndex], brightness);
 
+            // 현재 탐색중인 프레임 버퍼 위치 : 프레임 버퍼 너비 * 행 번호 + 열 번호
+            int *pFrameBufferIndex = pfbmap + (fbvar.xres * rowIndex) + columnIndex;
+            
             // 24BPP인 기존 비트맵 이미지를 설정한 BPP에 맞게 프레임 버퍼에 출력한다.
-            frameBufferFixelPointer = pfbmap + rowIndex * fbvar.xres + columnIndex;
-            *frameBufferFixelPointer = (frameBufferBPP == BPP_16)
-                ? convertRGB24toBGR16(pixelRGB)
-                : convertRGB24toABGR32(pixelRGB);
+            *pFrameBufferIndex = (frameBufferBPP == BPP_16) ? convertRGB24toBGR16(pixelRGB) : convertRGB24toABGR32(pixelRGB);
         }
     }
 }
@@ -158,71 +173,68 @@ void drawImageOnFrameBuffer(
 void captureFrameBuffer(
     unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader *bitmapHeader)
+    BMPHeader *pBitmapHeader)
 {
-    int fdBitmapOutput;                     // 비트맵 출력 파일 디스크립터
-    BMPHeader *bitmapOutputHeader;          // 출력 비트맵 헤더 구조체
-    int rowIndex, columnIndex;              // 반복문 제어 변수
-    unsigned int *frameBufferFixelPointer;  // 현재 탐색중인 프레임 버퍼 위치
-    unsigned int fixelRGBValue;             // 현재 탐색중인 프레임 버퍼의 픽셀 값
-
-    // 이미지 크기가 화면 밖을 벗어나는 경우에 대비해
-    // 화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
-    const int minHeight = MIN(bitmapHeader->biHeight, fbvar.yres);
-    const int minWidth = MIN(bitmapHeader->biWidth, fbvar.xres);
-
     // 기존에 캡처된 파일이 있다면 지운다.
-    if (access(OUTPUT_BITMAP_FILE_NAME, F_OK) >= 0)
+    const int checkFileExistence = access(OUTPUT_BITMAP_FILE_NAME, F_OK);
+    if (checkFileExistence >= 0)
     {
         unlink(OUTPUT_BITMAP_FILE_NAME);
     }
 
     // 캡처된 이미지를 저장하기 위해 파일을 만들어 연다.
-    fdBitmapOutput = open(OUTPUT_BITMAP_FILE_NAME, O_CREAT | O_WRONLY, 0777);
+    int fdBitmapOutput = open(OUTPUT_BITMAP_FILE_NAME, O_CREAT | O_WRONLY, 0777);
     if (fdBitmapOutput < 0)
     {
-        perror("OUTPUT IMAGE OPEN");
+        perror("Failed to create output image file.");
         exit(1);
     }
 
     // 비트맵 헤더 복사
-    memcpy(&bitmapOutputHeader, &bitmapHeader, sizeof(BMPHeader));
+    BMPHeader *pBitmapOutputHeader;
+    memcpy(&pBitmapOutputHeader, &pBitmapHeader, sizeof(BMPHeader));
 
-    // 비트맵 헤더 값 수정
-    bitmapOutputHeader->bfSize = minWidth * minHeight * 3 + BITMAP_HEADER_SIZE;   // 파일 크기
-    bitmapOutputHeader->biSizeImage = minWidth * minHeight * 3;                   // 비트맵 이미지의 픽셀 데이터 크기
-    bitmapOutputHeader->biWidth = minWidth;                                       // 비트맵 이미지의 가로 크기
-    bitmapOutputHeader->biHeight = minHeight;                                     // 비트맵 이미지의 세로 크기
-    bitmapOutputHeader->biBitCount = BITMAP_DEFAULT_BPP;                          // BPP(Bits Per Pixel)
+    // 이미지 크기가 화면 밖을 벗어나는 경우
+    // 화면 크기에 맞게 이미지를 자르기 위해 비트맵 헤더를 수정한다.
+    const int minHeight = MIN(pBitmapHeader->biHeight, fbvar.yres);
+    const int minWidth = MIN(pBitmapHeader->biWidth, fbvar.xres);
+
+    pBitmapOutputHeader->bfSize = minWidth * minHeight * (24 / 8) + BITMAP_HEADER_SIZE;  // 파일 크기
+    pBitmapOutputHeader->biSizeImage = minWidth * minHeight * (24 / 8);                  // 비트맵 이미지의 픽셀 데이터 크기
+    pBitmapOutputHeader->biWidth = minWidth;                                             // 비트맵 이미지의 가로 크기
+    pBitmapOutputHeader->biHeight = minHeight;                                           // 비트맵 이미지의 세로 크기
+    pBitmapOutputHeader->biBitCount = BITMAP_DEFAULT_BPP;                                // BPP(Bits Per Pixel)
 
     // 비트맵 헤더를 파일에 쓴다.
-    if (write(fdBitmapOutput, bitmapOutputHeader, sizeof(BMPHeader)) < 0)
+    int writeBytes = write(fdBitmapOutput, pBitmapOutputHeader, sizeof(BMPHeader));
+    if (writeBytes < 0)
     {
-        perror("WRITE BITMAP HEADER");
+        perror("Failed to write bitmap header.");
         exit(1);
     }
 
     // 프레임 버퍼 탐색
-    for(rowIndex = minHeight - 1; rowIndex >= 0; rowIndex--)
+    for (int rowIndex = minHeight - 1; rowIndex >= 0; rowIndex--)
     {
-        for(columnIndex = 0; columnIndex < minWidth; columnIndex++)
+        for (int columnIndex = 0; columnIndex < minWidth; columnIndex++)
         {
-            // 현재 탐색중인 프레임 버퍼 위치
-            frameBufferFixelPointer = pfbmap + rowIndex * fbvar.xres + columnIndex;
+            // 현재 탐색중인 프레임 버퍼 위치 : 프레임 버퍼 너비 * 행 번호 + 열 번호
+            unsigned int *pFrameBufferIndex = pfbmap + (fbvar.xres * rowIndex) + columnIndex;
 
-            // 프레임 버퍼의 픽셀 값을 읽어온다.
-            fixelRGBValue = *frameBufferFixelPointer;
+            // 픽셀 값을 읽어온다. 
+            unsigned int fixelRGBValue = *pFrameBufferIndex;
 
             // 16BPP 프레임 버퍼를 캡처할 경우 24BPP 이미지로 픽셀을 확장한다.
-            if(frameBufferBPP == BPP_16)
+            if (frameBufferBPP == BPP_16)
             {
                 fixelRGBValue = convertBGR16toBGR24(fixelRGBValue);
             }
 
             // 읽어온 픽셀 값을 24BPP 비트맵 파일에 저장한다.
-            if (write(fdBitmapOutput, &fixelRGBValue, BITMAP_DEFAULT_BPP/8) < 0)
+            writeBytes = write(fdBitmapOutput, &fixelRGBValue, BITMAP_DEFAULT_BPP / 8);
+            if (writeBytes < 0)
             {
-                perror("WRITE BITMAP PIXEL");
+                perror("Failed to write bitmap pixel.");
                 exit(1);
             }
         }
@@ -231,64 +243,57 @@ void captureFrameBuffer(
     close(fdBitmapOutput);
 }
 
-// 비트맵 파일의 헤더와 이미지를 읽고 동적할당하여 매개변수로 전달한다.
+// 비트맵 파일의 헤더와 이미지를 읽고 동적 할당하여 매개변수로 포인터를 전달한다.
 void loadBitmapImage(
     const unsigned int *pfbmap,
     const struct fb_var_screeninfo fbvar, 
-    BMPHeader **bitmapHeaderReference,
-    RGBpixel ***bitmapPixelReference,
-    const char *fileName)
+    BMPHeader **pReturnBitmapHeader,
+    RGBpixel ***pReturnBitmapPixel2dArray,
+    const char *pFileName)
 {
-    int rowIndex, columnIndex;  // 반복문 순회용 변수
-    int readBytes;              // read()로 값을 성공적으로 읽어왔는지 확인하기 위한 변수
-    int fdBitmapInput;          // 비트맵 이미지 파일 디스크립터
-    int bitmapPixelAreaSize;    // 비트맵 헤더를 제외한 이미지 영역 크기
-
-    BMPHeader *bitmapHeader;    // 비트맵 헤더 구조체
-    RGBpixel **bitmapPixel;     // RGB 각 8비트로 구성된 24비트 픽셀
-
-    //이미지 파일 열기
-    fdBitmapInput = open(fileName, O_RDWR);
+    // 이미지 파일 열기
+    const int fdBitmapInput = open(pFileName, O_RDWR);
     if (fdBitmapInput < 0)
     {
-        perror("INPUT IMAGE OPEN");
+        perror("Failed to open image file.");
         exit(1);
     }
 
-    // 비트맵 헤더 정보를 저장할 공간을 동적할당
-    bitmapHeader = (BMPHeader*)malloc(BITMAP_HEADER_SIZE);
+    // 비트맵 헤더를 저장할 공간을 동적 할당 (54 Bytes)
+    BMPHeader *pBitmapHeader = (BMPHeader*)malloc(BITMAP_HEADER_SIZE);
 
     // 비트맵 헤더 읽기
-    readBytes = read(fdBitmapInput, bitmapHeader, BITMAP_HEADER_SIZE);
+    int readBytes = read(fdBitmapInput, pBitmapHeader, BITMAP_HEADER_SIZE);
     if (readBytes < 0)
     {
-        perror("BITMAP HEADER READ ERROR");
+        perror("Failed to read bitmap header.");
         exit(1);
     }
     
-    //비트맵 이미지를 저장할 공간을 동적할당
-    bitmapPixelAreaSize = bitmapHeader-> bfSize - BITMAP_HEADER_SIZE;  
-    bitmapPixel = (RGBpixel**)malloc(bitmapPixelAreaSize);
+    // 비트맵 이미지를 저장할 공간을 동적 할당 (헤더 54 Bytes를 제외한 나머지 크기)
+    RGBpixel **pBitmapPixel2dArray = (RGBpixel**)malloc(pBitmapHeader->bfSize - BITMAP_HEADER_SIZE);
 
-    //비트맵 이미지 읽기
-    for(rowIndex = bitmapHeader->biHeight - 1; rowIndex >= 0; rowIndex--)
+    // 비트맵 이미지는 위아래가 뒤집어져 있으므로 역순으로 읽는다.
+    for (int rowIndex = pBitmapHeader->biHeight - 1; rowIndex >= 0; rowIndex--)
     {
-        bitmapPixel[rowIndex] = (RGBpixel*)malloc(sizeof(RGBpixel) * bitmapHeader->biWidth);
+        // 각 행마다 다시 동적 할당한다. (가로 픽셀 수 * 픽셀 바이트 크기)
+        pBitmapPixel2dArray[rowIndex] = (RGBpixel*)malloc(sizeof(RGBpixel) * pBitmapHeader->biWidth);
 
-        for(columnIndex = 0; columnIndex < bitmapHeader->biWidth; columnIndex++)
+        for (int columnIndex = 0; columnIndex < pBitmapHeader->biWidth; columnIndex++)
         {
-            readBytes = read(fdBitmapInput, &bitmapPixel[rowIndex][columnIndex], sizeof(RGBpixel));
+            // 비트맵 픽셀 크기만큼 이미지를 읽는다.
+            readBytes = read(fdBitmapInput, &pBitmapPixel2dArray[rowIndex][columnIndex], sizeof(RGBpixel));
             if (readBytes < 0)
             {
-                perror("BITMAP PIXEL READ ERROR");
+                perror("Failed to read bitmap pixel.");
                 exit(1);
             }
         }
     }
 
-    //동적 할당한 주소를 넘겨준다
-    *bitmapHeaderReference = bitmapHeader;
-    *bitmapPixelReference = bitmapPixel;
+    // 동적 할당한 주소를 넘겨준다.
+    *pReturnBitmapHeader = pBitmapHeader;
+    *pReturnBitmapPixel2dArray = pBitmapPixel2dArray;
 
     close(fdBitmapInput);
 }
