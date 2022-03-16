@@ -50,7 +50,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    int pushSwitchValue;    // Push Switch 인덱스 값, switch-case문에 들어간다.
     int pushSwitchIndex;    // 지속적으로 푸시 스위치를 스캔해서 눌린 버튼을 찾는다.
     unsigned char pushSwitchBuffer[PUSH_SWITCH_BUFFER_SIZE] = {0};      // 버튼이 눌리면 값이 1로 변한다.
     unsigned char textLCDBuffer[TEXT_LCD_HEIGHT][TEXT_LCD_WIDTH] = {0}; // 파일명, 해상도 및 BPP(Bits Per Pixel)를 표시한다.
@@ -133,11 +132,11 @@ int main(int argc, char* argv[])
     clearFrameBuffer(pfbmap, fbvar);
 
     // 비트맵 이미지 관련
-    BMPHeader *pBitmapHeader;                   // 입력 비트맵 헤더 구조체
-    RGBpixel **pBitmapPixel2dArray;             // RGB 각 8비트로 구성된 24비트 픽셀
-    int fileIndex = -1;                         // 1, 2번 버튼으로 다루게 될 pFileArray 배열의 인덱스
-    int brightness;	                            // 4, 5번 버튼으로 조절할 픽셀의 밝기
-    bool isImageLoaded;                         // 이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
+    BMPHeader *pBitmapHeader;               // 입력 비트맵 헤더 구조체
+    RGBpixel **pBitmapPixel2dArray;         // RGB 각 8비트로 구성된 24비트 픽셀
+    int fileIndex = -1;                     // 1, 2번 버튼으로 다루게 될 pFileArray 배열의 인덱스
+    int brightness;	                        // 4, 5번 버튼으로 조절할 픽셀의 밝기
+    bool isImageLoaded;                     // 이미지가 열리지 않은 상태로 3~6번 버튼이 눌리는 상황을 방지하기 위한 변수
 
     // 비트맵 확장자를 가진 파일 목록 수집
     unsigned char *pFileArray[FILE_NAME_ARRAY_SIZE] = {0};
@@ -151,13 +150,17 @@ int main(int argc, char* argv[])
         printf("4 : Increase brightness\n");
         printf("5 : Decrease brightness\n");
         printf("6 : Capture frame buffer\n");
+        printf("Frame buffer size : %d * %d\n", fbvar.xres, fbvar.yres);
+        printf("Frame buffer sizeV : %d * %d\n", fbvar.xres_virtual, fbvar.yres_virtual);
+        printf("Frame buffer bits_per_pixel : %d\n", fbvar.bits_per_pixel);
         printf("Ctrl + c : quit\n");
 
         // 장치가 연결되어 있다면 Push Switch 입력을 받고 인덱스에 1을 더해준다. (0~8 -> 1~9)
+        int pushSwitchValue = 0;
         if (isDeviceConnected)
         {
             read(fdPushSwitch, &pushSwitchBuffer, PUSH_SWITCH_BUFFER_SIZE);
-            for(pushSwitchIndex=0; pushSwitchIndex < PUSH_SWITCH_BUFFER_SIZE; pushSwitchIndex++)
+            for (pushSwitchIndex=0; pushSwitchIndex < PUSH_SWITCH_BUFFER_SIZE; pushSwitchIndex++)
             {
                 if (pushSwitchBuffer[pushSwitchIndex] == 1)
                 {

@@ -36,9 +36,9 @@ extern bool isDeviceConnected;          // 장치가 연결되어 있는지 확�
 
 typedef struct pixel_24bit
 {
-    unsigned char red;
-    unsigned char green;
     unsigned char blue;
+    unsigned char green;
+    unsigned char red;
 } RGBpixel;
 
 #pragma pack(push, 1)

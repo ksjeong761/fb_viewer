@@ -44,7 +44,7 @@ unsigned int convertRGB24toABGR32(const RGBpixel pixel)
 {
     const unsigned int alpha = 0;   // 투명도
     
-    return ((alpha << 24) | (pixel.blue << 16) | (pixel.green << 8) | (pixel.red << 0));
+    return ((alpha << 24) | (pixel.blue << 0) | (pixel.green << 8) | (pixel.red << 16));
 }
 
 // 24비트 RGB 픽셀을 16비트 BGR 픽셀로 순서 변환과 함께 축소한다.
@@ -128,7 +128,7 @@ void searchFilesInPathByExtention(
 int calculateFrameBufferSize(const struct fb_var_screeninfo fbvar)
 {
     // 가로 * 세로 * BPP에 따른 바이트 크기 (32BPP : 4Bytes / 16BPP : 2Bytes)
-    return fbvar.xres * fbvar.yres * frameBufferBPP / 8;
+    return fbvar.xres_virtual * fbvar.yres_virtual * (frameBufferBPP / 8);
 }
 
 // 프레임 버퍼 비우기
@@ -149,8 +149,8 @@ void drawImageOnFrameBuffer(
 {
     // 이미지 크기가 화면 밖을 벗어나는 경우에 대비해
     // 화면과 이미지 중 더 작은 너비, 높이 값을 사용한다.
-    const int minHeight = MIN(pBitmapHeader->biHeight, fbvar.yres);
-    const int minWidth = MIN(pBitmapHeader->biWidth, fbvar.xres);
+    const int minHeight = pBitmapHeader->biHeight;
+    const int minWidth = pBitmapHeader->biWidth;
 
     // 프레임 버퍼를 탐색한다.
     for (int rowIndex = 0; rowIndex < minHeight; rowIndex++)
@@ -161,10 +161,14 @@ void drawImageOnFrameBuffer(
             RGBpixel pixelRGB = changePixelBrightness(pBitmapPixel2dArray[rowIndex][columnIndex], brightness);
 
             // 현재 탐색중인 프레임 버퍼 위치 : 프레임 버퍼 너비 * 행 번호 + 열 번호
-            int *pFrameBufferIndex = pfbmap + (fbvar.xres * rowIndex) + columnIndex;
+            int offset = fbvar.xres_virtual * rowIndex + columnIndex;
+
+            // int *pFrameBufferIndex = pfbmap + ((fbvar.xres_virtual) * rowIndex) + columnIndex;
             
-            // 24BPP인 기존 비트맵 이미지를 설정한 BPP에 맞게 프레임 버퍼에 출력한다.
-            *pFrameBufferIndex = (frameBufferBPP == BPP_16) ? convertRGB24toBGR16(pixelRGB) : convertRGB24toABGR32(pixelRGB);
+            // // 24BPP인 기존 비트맵 이미지를 설정한 BPP에 맞게 프레임 버퍼에 출력한다.
+            // *pFrameBufferIndex = (frameBufferBPP == BPP_16) ? convertRGB24toBGR16(pixelRGB) : convertRGB24toABGR32(pixelRGB);
+        
+            *(pfbmap + offset) = convertRGB24toABGR32(pixelRGB);
         }
     }
 }
@@ -191,13 +195,13 @@ void captureFrameBuffer(
     }
 
     // 비트맵 헤더 복사
-    BMPHeader *pBitmapOutputHeader;
-    memcpy(&pBitmapOutputHeader, &pBitmapHeader, sizeof(BMPHeader));
+    BMPHeader *pBitmapOutputHeader = (BMPHeader*)malloc(BITMAP_HEADER_SIZE);
+    memcpy(pBitmapOutputHeader, pBitmapHeader, BITMAP_HEADER_SIZE);
 
     // 이미지 크기가 화면 밖을 벗어나는 경우
     // 화면 크기에 맞게 이미지를 자르기 위해 비트맵 헤더를 수정한다.
-    const int minHeight = MIN(pBitmapHeader->biHeight, fbvar.yres);
-    const int minWidth = MIN(pBitmapHeader->biWidth, fbvar.xres);
+    const int minHeight = fbvar.yres_virtual;
+    const int minWidth = fbvar.xres_virtual;
 
     pBitmapOutputHeader->bfSize = minWidth * minHeight * (24 / 8) + BITMAP_HEADER_SIZE;  // 파일 크기
     pBitmapOutputHeader->biSizeImage = minWidth * minHeight * (24 / 8);                  // 비트맵 이미지의 픽셀 데이터 크기
@@ -219,7 +223,7 @@ void captureFrameBuffer(
         for (int columnIndex = 0; columnIndex < minWidth; columnIndex++)
         {
             // 현재 탐색중인 프레임 버퍼 위치 : 프레임 버퍼 너비 * 행 번호 + 열 번호
-            unsigned int *pFrameBufferIndex = pfbmap + (fbvar.xres * rowIndex) + columnIndex;
+            unsigned int *pFrameBufferIndex = pfbmap + (fbvar.xres_virtual * rowIndex) + columnIndex;
 
             // 픽셀 값을 읽어온다. 
             unsigned int fixelRGBValue = *pFrameBufferIndex;
@@ -271,12 +275,12 @@ void loadBitmapImage(
     }
     
     // 비트맵 이미지를 저장할 공간을 동적 할당 (헤더 54 Bytes를 제외한 나머지 크기)
-    RGBpixel **pBitmapPixel2dArray = (RGBpixel**)malloc(pBitmapHeader->bfSize - BITMAP_HEADER_SIZE);
+    RGBpixel **pBitmapPixel2dArray = (RGBpixel**)malloc(pBitmapHeader->biWidth * pBitmapHeader->biHeight);
 
     // 비트맵 이미지는 위아래가 뒤집어져 있으므로 역순으로 읽는다.
-    for (int rowIndex = pBitmapHeader->biHeight - 1; rowIndex >= 0; rowIndex--)
+    for (int rowIndex = pBitmapHeader->biHeight-1; rowIndex >= 0; rowIndex--)
     {
-        // 각 행마다 다시 동적 할당한다. (가로 픽셀 수 * 픽셀 바이트 크기)
+        // 배열을 사용하기 위해 각 행마다 다시 동적 할당한다. (가로 픽셀 수 * 픽셀 바이트 크기)
         pBitmapPixel2dArray[rowIndex] = (RGBpixel*)malloc(sizeof(RGBpixel) * pBitmapHeader->biWidth);
 
         for (int columnIndex = 0; columnIndex < pBitmapHeader->biWidth; columnIndex++)
@@ -288,6 +292,16 @@ void loadBitmapImage(
                 perror("Failed to read bitmap pixel.");
                 exit(1);
             }
+        }
+        
+        // 비트맵 너비가 4의 배수가 아닐 경우 4의 배수를 채우기 위해 패딩 바이트가 들어간다.
+        int paddingBytes = pBitmapHeader->biWidth % 4;
+        while (paddingBytes > 0)
+        {
+            // 패딩 바이트를 버린다.
+            unsigned char *pTrashcan = NULL;
+            readBytes = read(fdBitmapInput, pTrashcan, 1);
+            paddingBytes--;
         }
     }
 
