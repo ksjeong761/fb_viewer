@@ -131,7 +131,6 @@ void clearFrameBuffer(
     const struct fb_var_screeninfo fbvar)
 {
     memset(pfbmap, 0, calculateFrameBufferSize(fbvar));
-    system("clear");
 }
 
 // 프레임 버퍼에 이미지 출력

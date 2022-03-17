@@ -149,8 +149,7 @@ int main(int argc, char* argv[])
         printf("5 : Decrease brightness\n");
         printf("6 : Capture frame buffer\n");
         printf("Frame buffer size : %d * %d\n", fbvar.xres, fbvar.yres);
-        printf("Frame buffer sizeV : %d * %d\n", fbvar.xres_virtual, fbvar.yres_virtual);
-        printf("Frame buffer bits_per_pixel : %d\n", fbvar.bits_per_pixel);
+        printf("Frame buffer size virtual : %d * %d\n", fbvar.xres_virtual, fbvar.yres_virtual);
         printf("Ctrl + c : quit\n");
 
         // 장치가 연결되어 있다면 Push Switch 입력을 받고 인덱스에 1을 더해준다. (0~8 -> 1~9)
@@ -174,6 +173,8 @@ int main(int argc, char* argv[])
 
         // 시간을 측정한다.
         clock_t timeStart = clock();
+        
+        system("clear");
         
         switch (pushSwitchValue)
         {
@@ -302,10 +303,8 @@ int main(int argc, char* argv[])
 
             // 프레임 버퍼 캡처
             case 6:
-                printf("case 6 : CAPTURE FRAME BUFFER\n");
-                
                 // 프레임 버퍼 캡처
-                captureFrameBuffer(pfbmap,fbvar, pBitmapHeader);
+                captureFrameBuffer(pfbmap, fbvar, pBitmapHeader);
 
                 // 새 파일이 추가되었으므로 파일 목록을 다시 불러온다.
                 searchFilesInPathByExtention(pFileArray, ".", BITMAP_EXTENSION);

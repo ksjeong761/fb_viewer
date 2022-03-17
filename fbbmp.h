@@ -65,7 +65,7 @@ typedef struct bmpHeader
 #pragma pack(pop)
 
 // 값이 지정한 범위를 벗어나지 않도록 한다.
-unsigned char thresholding(
+int thresholding(
     int value,
     const int rangeMin,
     const int rangeMax);
