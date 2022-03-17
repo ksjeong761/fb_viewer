@@ -299,8 +299,8 @@ void loadBitmapImage(
         while (paddingBytes > 0)
         {
             // 패딩 바이트를 버린다.
-            unsigned char *pTrashcan = NULL;
-            readBytes = read(fdBitmapInput, pTrashcan, 1);
+            unsigned char trashcan = ' ';
+            readBytes = read(fdBitmapInput, &trashcan, 1);
             paddingBytes--;
         }
     }
