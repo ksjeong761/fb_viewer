@@ -2,16 +2,10 @@
 #include <stdlib.h>
 #include <stdbool.h> 
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/ioctl.h>
-#include <signal.h>
-#include <sys/mman.h>
 #include <linux/fb.h>
-#include <string.h>
 #include <dirent.h>
-#include <time.h>
+#include <string.h>
 
 #include "fbbmp.h"
 
@@ -137,6 +131,7 @@ void clearFrameBuffer(
     const struct fb_var_screeninfo fbvar)
 {
     memset(pfbmap, 0, calculateFrameBufferSize(fbvar));
+    system("clear");
 }
 
 // 프레임 버퍼에 이미지 출력

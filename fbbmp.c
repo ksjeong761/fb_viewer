@@ -2,15 +2,13 @@
 #include <stdlib.h>
 #include <stdbool.h> 
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/ioctl.h>
-#include <signal.h>
-#include <sys/mman.h>
 #include <linux/fb.h>
-#include <string.h>
 #include <dirent.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <signal.h>
 #include <time.h>
 
 #include "fbbmp.h"
@@ -254,8 +252,13 @@ int main(int argc, char* argv[])
                 printf("case 3 : CLEAR FRAME BUFFER\n");
 
                 clearFrameBuffer(pfbmap, fbvar);
-                free(pBitmapHeader);
-                free(pBitmapPixel2dArray);
+
+                if (isImageLoaded)
+                {
+                    free(pBitmapHeader);
+                    free(pBitmapPixel2dArray);
+                }
+
                 isImageLoaded = false;
                 break;
 
@@ -266,6 +269,7 @@ int main(int argc, char* argv[])
                 // 읽어온 이미지가 있어야 동작 가능하다.
                 if (!isImageLoaded)
                 {
+                    clearFrameBuffer(pfbmap, fbvar);
                     printf("There isn't any loaded image.\n");
                     break;
                 }
@@ -284,6 +288,7 @@ int main(int argc, char* argv[])
                 // 읽어온 이미지가 있어야 동작 가능하다.
                 if (!isImageLoaded)
                 {
+                    clearFrameBuffer(pfbmap, fbvar);
                     printf("There isn't any loaded image.\n");
                     break;
                 }
@@ -298,13 +303,6 @@ int main(int argc, char* argv[])
             // 프레임 버퍼 캡처
             case 6:
                 printf("case 6 : CAPTURE FRAME BUFFER\n");
-                
-                // 읽어온 이미지가 있어야 동작 가능하다.
-                if (!isImageLoaded)
-                {
-                    printf("There isn't any loaded image.\n");
-                    break;
-                }
                 
                 // 프레임 버퍼 캡처
                 captureFrameBuffer(pfbmap,fbvar, pBitmapHeader);
@@ -323,7 +321,7 @@ int main(int argc, char* argv[])
         // 오래 걸리는 기능을 실행했을 경우에만 시간을 출력한다.
         if (pushSwitchValue == 1 || pushSwitchValue == 2 || pushSwitchValue == 6)
         {
-            printf("TIME : %f\n", ((double)(timeEnd - timeStart)/1000000));
+            printf("TIME : %f\n\n", ((double)(timeEnd - timeStart)/1000000));
         }
 
         pushSwitchValue = 0;
