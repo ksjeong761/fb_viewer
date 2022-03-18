@@ -17,6 +17,7 @@
 #define TEXT_LCD_BUFFER_SIZE 32         // Text LCD는 총 32개 문자를 출력할 수 있다.
 
 #define FILE_NAME_ARRAY_SIZE 64         // 비트맵 파일 이름을 64개 까지만 저장할 것이다.
+#define FILE_NAME_MAX_LENGTH 255        // 비트맵 파일 이름 최대 길이
 
 #define BITMAP_HEADER_SIZE 54           // 비트맵 헤더의 크기는 54로 고정되어 있다.
 #define BITMAP_DEFAULT_BPP 24           // 비트맵 파일의 기본 BPP는 24이다.
@@ -89,7 +90,7 @@ void signalCallbackQuit(const int sig);
 
 //입력한 경로에서 특정 확장자를 가진 파일을 수집한다.
 void searchFilesInPathByExtention(
-    unsigned char *pFileNamesArray[FILE_NAME_ARRAY_SIZE],
+    unsigned char *pFileNameArray[FILE_NAME_MAX_LENGTH],
     const char *pTargetPath,
     const char *pTargetExtension);
 
@@ -122,5 +123,13 @@ void loadBitmapImage(
     BMPHeader **pReturnBitmapHeader,
     RGBpixel ***pReturnBitmapPixel2dArray,
     const char *pFileName);
+
+// 읽어온 이미지가 있는지 확인한다.
+bool isImageLoaded(
+    BMPHeader *pBitmapHeader,
+    RGBpixel **pBitmapPixel2dArray);
+
+// 프로그램 사용법을 콘솔에 출력한다.
+void printUsageOnConsole();
 
 #endif
